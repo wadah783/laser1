@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحديد المحاور والنقاط على الصورة</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid black; padding: 8px; text-align: center; }
+        canvas { border: 1px solid black; margin-top: 10px; cursor: crosshair; }
+        button { margin: 5px; padding: 8px 15px; font-size: 16px; border-radius: 5px; cursor: pointer; }
+        button:hover { background-color: #ddd; }
+        .delete-btn { background-color: red; color: white; border: none; padding: 5px; cursor: pointer; }
+        .delete-btn:hover { background-color: darkred; }
+        .edit-btn { background-color: yellow; color: black; border: none; padding: 5px; cursor: pointer; }
+        .edit-btn:hover { background-color: gold; }
+    </style>
+</head>
+<body>
+    <h2>تحديد المحاور والنقاط على الصورة</h2>
+
+    <label for="xMin">أقل قيمة لـ X:</label>
+    <input type="text" id="xMin" value="0.0" /><br />
+
+    <label for="xMax">أعلى قيمة لـ X:</label>
+    <input type="text" id="xMax" value="10.0" /><br />
+
+    <label for="yMin">أقل قيمة لـ Y:</label>
+    <input type="text" id="yMin" value="0.0" /><br />
+
+    <label for="yMax">أعلى قيمة لـ Y:</label>
+    <input type="text" id="yMax" value="100.0" /><br />
+
+    <br />
+    <input type="file" id="fileInput" />
+    <button id="resetAxesButton">إعادة تعيين المحاور</button>
+    <button id="resetButton">إعادة تعيين الكل</button>
+    <button id="saveButton">حفظ كملف Excel</button>
+    <canvas id="myCanvas"></canvas>
+
+    <h3>النقاط المستخرجة:</h3>
+    <table id="pointsTable">
+        <thead>
+            <tr>
+                <th>رقم النقطة</th>
+                <th>X</th>
+                <th>Y</th>
+                <th>تعديل</th>
+                <th>حذف</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <h3>الرسم البياني للنقاط:</h3>
+    <canvas id="chartCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('myCanvas');
+        const ctx = canvas.getContext('2d');
+        const points = [];
+        let xAxis = null;
+        let yAxis = null;
+        let image = null;
+
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const img = new Image();
+                img.onload = function() {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    image = img;
+                    drawImage();
+                };
+                img.src = URL.createObjectURL(file);
+            }
+        });
+
+        document.getElementById('resetButton').addEventListener('click', function() {
+            points.length = 0;
+            xAxis = null;
+            yAxis = null;
+            drawImage();
+            updateTable();
+            updateChart();
+        });
+
+        document.getElementById('resetAxesButton').addEventListener('click', function() {
+            xAxis = null;
+            yAxis = null;
+            drawImage();
+        });
+
+        function drawImage() {
+            if (image) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(image, 0, 0);
+            }
+
+            if (xAxis !== null && yAxis !== null) {
+                ctx.beginPath();
+                ctx.moveTo(xAxis, 0);
+                ctx.lineTo(xAxis, canvas.height);
+                ctx.moveTo(0, yAxis);
+                ctx.lineTo(canvas.width, yAxis);
+                ctx.strokeStyle = 'red';
+                ctx.stroke();
+            }
+
+            points.forEach(point => drawPoint(point.canvasX, point.canvasY));
+            updateChart();
+        }
+
+        function drawPoint(x, y) {
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = 'blue';
+            ctx.fill();
+        }
+
+        function getFloatValue(id) {
+            return parseFloat(document.getElementById(id).value.replace(',', '.'));
+        }
+
+        canvas.addEventListener('click', function(event) {
+            const rect = canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            if (xAxis === null && yAxis === null) {
+                xAxis = x;
+                yAxis = y;
+            } else {
+                const xMin = getFloatValue('xMin');
+                const xMax = getFloatValue('xMax');
+                const yMin = getFloatValue('yMin');
+                const yMax = getFloatValue('yMax');
+
+                const normalizedX = xMin + ((x - xAxis) / (canvas.width - xAxis)) * (xMax - xMin);
+                const normalizedY = yMin + ((yAxis - y) / (yAxis)) * (yMax - yMin);
+
+                points.push({
+                    x: parseFloat(normalizedX.toFixed(15)),  // دقة عالية
+                    y: parseFloat(normalizedY.toFixed(15)),  
+                    canvasX: x,
+                    canvasY: y
+                });
+
+                updateTable();
+            }
+
+            drawImage();
+        });
+
+        function updateTable() {
+            const tableBody = document.getElementById('pointsTable').getElementsByTagName('tbody')[0];
+            tableBody.innerHTML = "";
+            points.forEach((point, index) => {
+                const row = tableBody.insertRow();
+                row.insertCell(0).textContent = index + 1;
+                row.insertCell(1).textContent = point.x.toFixed(15);
+                row.insertCell(2).textContent = point.y.toFixed(15);
+
+                // إضافة زر تعديل
+                const editBtn = document.createElement('button');
+                editBtn.textContent = "تعديل";
+                editBtn.className = "edit-btn";
+                editBtn.onclick = () => {
+                    const newX = prompt("أدخل القيمة الجديدة لـ X:", point.x.toFixed(15));
+                    const newY = prompt("أدخل القيمة الجديدة لـ Y:", point.y.toFixed(15));
+
+                    if (newX && newY) {
+                        point.x = parseFloat(newX);
+                        point.y = parseFloat(newY);
+                        point.canvasX = (point.x - getFloatValue('xMin')) * (canvas.width - xAxis) / (getFloatValue('xMax') - getFloatValue('xMin')) + xAxis;
+                        point.canvasY = (yAxis - (point.y - getFloatValue('yMin')) * yAxis / (getFloatValue('yMax') - getFloatValue('yMin')));
+
+                        updateTable();
+                        drawImage();
+                    }
+                };
+                row.insertCell(3).appendChild(editBtn);
+
+                // إضافة زر حذف
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = "✖";
+                deleteBtn.className = "delete-btn";
+                deleteBtn.onclick = () => {
+                    points.splice(index, 1);
+                    updateTable();
+                    drawImage();
+                };
+                row.insertCell(4).appendChild(deleteBtn);
+            });
+        }
+
+        const chartCtx = document.getElementById('chartCanvas').getContext('2d');
+        const chart = new Chart(chartCtx, {
+            type: 'scatter',
+            data: { datasets: [{ label: 'النقاط', data: [], backgroundColor: 'blue' }] },
+            options: { 
+                scales: {
+                    x: { title: { display: true, text: 'X' } },
+                    y: { title: { display: true, text: 'Y' } }
+                }
+            }
+        });
+
+        function updateChart() {
+            chart.data.datasets[0].data = points.map(p => ({ x: p.x, y: p.y }));
+            chart.update();
+        }
+
+        document.getElementById('saveButton').addEventListener('click', function() {
+            if (points.length === 0) return alert("لا توجد نقاط لحفظها.");
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([["رقم النقطة", "X", "Y"], ...points.map((p, i) => [i + 1, p.x.toFixed(15), p.y.toFixed(15)])]);
+            XLSX.utils.book_append_sheet(wb, ws, "النقاط");
+            XLSX.writeFile(wb, "النقاط.xlsx");
+        });
+    </script>
+</body>
+</html>
